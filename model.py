@@ -303,11 +303,13 @@ class GPT(nn.Module):
         return mfu
 
     @torch.no_grad()
-    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None):
+    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None, top_p=None):
         """
         Take a conditioning sequence of indices idx (LongTensor of shape (b,t)) and complete
         the sequence max_new_tokens times, feeding the predictions back into the model each time.
         Most likely you'll want to make sure to be in model.eval() mode of operation for this.
+        top_p enables nucleus sampling: only the smallest set of tokens whose probabilities
+        add up to top_p is kept (https://arxiv.org/abs/1904.09751).
         """
         for _ in range(max_new_tokens):
             # if the sequence context is growing too long we must crop it at block_size
@@ -320,6 +322,14 @@ class GPT(nn.Module):
             if top_k is not None:
                 v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
                 logits[logits < v[:, [-1]]] = -float('Inf')
+            # optionally crop the logits to the nucleus of top_p probability mass
+            if top_p is not None and top_p < 1.0:
+                sorted_logits, sorted_idx = torch.sort(logits, descending=True)
+                sorted_probs = F.softmax(sorted_logits, dim=-1)
+                # drop a token if the tokens before it already cover top_p (the first token is always kept)
+                sorted_remove = sorted_probs.cumsum(dim=-1) - sorted_probs > top_p
+                remove = sorted_remove.scatter(1, sorted_idx, sorted_remove)
+                logits[remove] = -float('Inf')
             # apply softmax to convert logits to (normalized) probabilities
             probs = F.softmax(logits, dim=-1)
             # sample from the distribution
