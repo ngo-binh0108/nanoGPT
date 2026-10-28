@@ -10,6 +10,60 @@
 
 ---
 
+## This fork
+
+[![tests](https://github.com/ngo-binh0108/nanoGPT/actions/workflows/tests.yml/badge.svg)](https://github.com/ngo-binh0108/nanoGPT/actions/workflows/tests.yml)
+
+A fork of [karpathy/nanoGPT](https://github.com/karpathy/nanoGPT) with a few additions for working on CPU. Everything else, including the rest of this README, is the original project.
+
+- **Unit tests** (`tests/test_model.py`): 19 tests for the model, run on CPU with a tiny GPT in a few seconds, and on every push by GitHub Actions. `python -m pytest`
+- **Top-p (nucleus) sampling**: `GPT.generate(..., top_p=0.9)` and `python sample.py --top_p=0.9`. Default `1.0` keeps the old behaviour.
+- **Loss log and plot**: `train.py` appends the eval losses to `out_dir/log.csv`, and `python plot_loss.py --out_dir=...` saves `out_dir/loss.png`.
+- **Fixes**: no `GradScaler` deprecation warning, and character-level models can be sampled without `tiktoken` installed.
+
+### Shakespeare on CPU
+
+A 1.78M-parameter model (4 layers, 4 heads, 192 dims, 128-character context) trained on CPU (8 threads) in about 45 minutes:
+
+```sh
+python data/shakespeare_char/prepare.py
+python train.py config/train_shakespeare_char.py --device=cpu --compile=False --dtype=float32 \
+  --out_dir=out-shakespeare-char-cpu --eval_interval=100 --eval_iters=50 --log_interval=50 \
+  --block_size=128 --batch_size=32 --n_layer=4 --n_head=4 --n_embd=192 \
+  --max_iters=3000 --lr_decay_iters=3000 --dropout=0.1
+python plot_loss.py --out_dir=out-shakespeare-char-cpu
+```
+
+Val loss goes from 4.19 to 1.54:
+
+![Shakespeare char CPU loss](assets/fork_shakespeare_char_cpu_loss.png)
+
+Sampling with nucleus sampling:
+
+```sh
+python sample.py --out_dir=out-shakespeare-char-cpu --device=cpu --dtype=float32 \
+  --num_samples=1 --max_new_tokens=400 --top_p=0.9 --start="ROMEO:"
+```
+
+```
+ROMEO:
+We are to the mother.
+
+CAMILLO:
+It is supper to service, and he was he hand.
+
+QUEEN MARGARET:
+Ay, thou hast she more not for it.
+
+BENVOLIO:
+Why shall I was not but seeks a man, and call to be charge
+Is in thy son or more in the foolices of the poor to help,
+```
+
+The names, line breaks and verse form are right after 45 minutes on CPU; the words don't make sense yet. For comparison, the full `config/train_shakespeare_char.py` model reaches 1.4697 in about 3 minutes on one A100 (see quick start below).
+
+---
+
 The simplest, fastest repository for training/finetuning medium-sized GPTs. It is a rewrite of [minGPT](https://github.com/karpathy/minGPT) that prioritizes teeth over education. Still under active development, but currently the file `train.py` reproduces GPT-2 (124M) on OpenWebText, running on a single 8XA100 40GB node in about 4 days of training. The code itself is plain and readable: `train.py` is a ~300-line boilerplate training loop and `model.py` a ~300-line GPT model definition, which can optionally load the GPT-2 weights from OpenAI. That's it.
 
 ![repro124m](assets/gpt2_124M_loss.png)
