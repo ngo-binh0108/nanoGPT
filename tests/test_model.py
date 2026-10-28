@@ -118,6 +118,35 @@ def test_generate_top_k_1_is_greedy(model):
         seq = torch.cat((seq, logits[:, -1, :].argmax(dim=-1, keepdim=True)), dim=1)
     assert torch.equal(a, seq)
 
+def test_generate_tiny_top_p_is_greedy(model):
+    idx = torch.zeros((1, 4), dtype=torch.long)
+    greedy = model.generate(idx, max_new_tokens=6, top_k=1)
+    nucleus = model.generate(idx, max_new_tokens=6, top_p=1e-6)
+    assert torch.equal(greedy, nucleus)
+
+def test_generate_top_p_1_changes_nothing(model):
+    idx = torch.zeros((1, 4), dtype=torch.long)
+    torch.manual_seed(3)
+    a = model.generate(idx, max_new_tokens=8)
+    torch.manual_seed(3)
+    b = model.generate(idx, max_new_tokens=8, top_p=1.0)
+    assert torch.equal(a, b)
+
+def test_generate_top_p_samples_only_from_the_nucleus(model):
+    # sharpen the distribution so the nucleus is a small subset of the vocab
+    idx = torch.zeros((1, 4), dtype=torch.long)
+    temperature, top_p = 0.05, 0.5
+    logits, _ = model(idx)
+    probs = torch.softmax(logits[0, -1] / temperature, dim=-1)
+    sorted_probs, sorted_idx = torch.sort(probs, descending=True)
+    n_keep = int((sorted_probs.cumsum(0) - sorted_probs <= top_p).sum())
+    nucleus = set(sorted_idx[:n_keep].tolist())
+    assert n_keep < 65
+    torch.manual_seed(4)
+    out = model.generate(idx.repeat(500, 1), max_new_tokens=1, temperature=temperature, top_p=top_p)
+    sampled = set(out[:, -1].tolist())
+    assert sampled <= nucleus
+
 def test_crop_block_size(model):
     model.crop_block_size(8)
     assert model.config.block_size == 8
