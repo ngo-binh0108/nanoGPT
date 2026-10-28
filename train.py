@@ -39,6 +39,7 @@ eval_iters = 200
 eval_only = False # if True, script exits right after the first eval
 always_save_checkpoint = True # if True, always save a checkpoint after each eval
 init_from = 'scratch' # 'scratch' or 'resume' or 'gpt2*'
+log_file = 'log.csv' # eval losses are appended to out_dir/log_file, plot with plot_loss.py. '' to disable
 # wandb logging
 wandb_log = False # disabled by default
 wandb_project = 'owt'
@@ -245,6 +246,11 @@ def get_lr(it):
 if wandb_log and master_process:
     import wandb
     wandb.init(project=wandb_project, name=wandb_run_name, config=config)
+log_path = os.path.join(out_dir, log_file) if log_file else None
+if log_path and master_process and (init_from != 'resume' or not os.path.exists(log_path)):
+    # a fresh run starts a fresh log, a resumed run keeps appending to it
+    with open(log_path, 'w') as f:
+        f.write("iter,train_loss,val_loss,lr\n")
 
 # training loop
 X, Y = get_batch('train') # fetch the very first batch
@@ -263,6 +269,9 @@ while True:
     if iter_num % eval_interval == 0 and master_process:
         losses = estimate_loss()
         print(f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+        if log_path:
+            with open(log_path, 'a') as f:
+                f.write(f"{iter_num},{losses['train']:.4f},{losses['val']:.4f},{lr:.6g}\n")
         if wandb_log:
             wandb.log({
                 "iter": iter_num,
